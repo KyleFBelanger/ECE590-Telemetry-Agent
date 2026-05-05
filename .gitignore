@@ -1,0 +1,15 @@
+# Database files
+data/*.db
+data/*.sqlite
+
+# Training logs
+results/*.txt
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# OS files
+.DS_Store
+Thumbs.db
