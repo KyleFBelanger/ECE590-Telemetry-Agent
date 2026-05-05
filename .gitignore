@@ -1,6 +1,10 @@
 # Database files
 data/*.db
 data/*.sqlite
+data/MNIST/
+data/metrics.db
+data/sync/
+results/training_log.txt
 
 # Training logs
 results/*.txt
