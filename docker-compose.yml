@@ -67,7 +67,7 @@ services:
       - ./dashboard:/workspace/dashboard
       - ./data:/workspace/data
     ports:
-      - "5050:5000"
+      - "8501:8501"
     tty: true
     stdin_open: true
 
