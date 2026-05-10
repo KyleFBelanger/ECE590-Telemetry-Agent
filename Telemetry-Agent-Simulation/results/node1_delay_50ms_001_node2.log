@@ -1,0 +1,39 @@
+Exception in thread Thread-1 (start_rtt_server):
+Traceback (most recent call last):
+  File "/usr/local/lib/python3.11/threading.py", line 1045, in _bootstrap_inner
+    self.run()
+  File "/usr/local/lib/python3.11/threading.py", line 982, in run
+    self._target(*self._args, **self._kwargs)
+  File "/workspace/telemetry/agent.py", line 103, in start_rtt_server
+    server.bind(('0.0.0.0', RTT_PORT))
+OSError: [Errno 98] Address already in use
+[Hook] Installed | job=node1_delay_50ms_001 rank=2 node=node2
+[rank2]: Traceback (most recent call last):
+[rank2]:   File "/workspace/training/train.py", line 152, in <module>
+[rank2]:     train()
+[rank2]:   File "/workspace/training/train.py", line 106, in train
+[rank2]:     model     = DDP(SimpleNet())
+[rank2]:                 ^^^^^^^^^^^^^^^^
+[rank2]:   File "/usr/local/lib/python3.11/site-packages/torch/nn/parallel/distributed.py", line 881, in __init__
+[rank2]:     _verify_param_shape_across_processes(self.process_group, parameters)
+[rank2]:   File "/usr/local/lib/python3.11/site-packages/torch/distributed/utils.py", line 286, in _verify_param_shape_across_processes
+[rank2]:     return dist._verify_params_across_processes(process_group, tensors, logger)
+[rank2]:            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[rank2]: RuntimeError: [/pytorch/third_party/gloo/gloo/transport/tcp/pair.cc:538] Read error [172.18.0.6]:29576: Connection reset by peer
+[Agent] Started | node=node2 | job=node1_delay_50ms_001 | peers=['node0', 'node1']
+[Agent] Epoch 2 complete | all_reduce=235.9ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 0.20 ms
+  [RTT] → node1: 103.07 ms
+[Agent] Wrote metrics | nic_sent=2.4MB/s nic_recv=2.4MB/s rtt=103.07041700025366ms
+[Agent] Epoch 3 complete | all_reduce=236.0ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 0.17 ms
+  [RTT] → node1: 105.47 ms
+[Agent] Wrote metrics | nic_sent=2.4MB/s nic_recv=2.3MB/s rtt=105.46849999991537ms
+[Agent] Training complete signal received. Shutting down.
+[Agent] Exiting.
+[Launch] Starting telemetry agent on node2...
+[Launch] Starting training on node2...
+[Launch] Training finished on node2.
+[Launch] Done.

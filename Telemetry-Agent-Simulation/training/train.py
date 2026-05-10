@@ -58,6 +58,7 @@ class SimpleNet(nn.Module):
 def train():
     rank       = int(os.environ['RANK'])
     world_size = int(os.environ['WORLD_SIZE'])
+    epochs     = int(os.environ.get("EPOCHS", "3"))
 
     setup()
 
@@ -85,7 +86,7 @@ def train():
     # ─────────────────────────────────────────────────────────────────────────
 
     if rank == 0:
-        print(f"[Master] Cluster ready — {world_size} nodes connected | job_id={job_id}")
+        print(f"[Master] Cluster ready — {world_size} nodes connected | job_id={job_id} | epochs={epochs}")
 
     transform = transforms.Compose([
         transforms.ToTensor(),
@@ -106,7 +107,7 @@ def train():
     optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
     criterion = nn.CrossEntropyLoss()
 
-    for epoch in range(3):
+    for epoch in range(epochs):
         sampler.set_epoch(epoch)
         epoch_start = time.time()
         total_loss  = 0

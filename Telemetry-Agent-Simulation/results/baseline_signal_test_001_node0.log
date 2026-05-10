@@ -1,0 +1,36 @@
+[Hook] Installed | job=baseline_signal_test_001 rank=0 node=node0
+[Master] Cluster ready — 3 nodes connected | job_id=baseline_signal_test_001 | epochs=3
+[Hook] Epoch 1 | node=node0 | all_reduce=22.3ms
+Epoch 1 | Loss: 1.5603 | Time: 8.92s
+[Hook] Epoch 2 | node=node0 | all_reduce=25.4ms
+Epoch 2 | Loss: 0.5209 | Time: 10.04s
+[Hook] Epoch 3 | node=node0 | all_reduce=24.4ms
+Epoch 3 | Loss: 0.3785 | Time: 9.63s
+[Hook] Written done signal → /workspace/data/sync/baseline_signal_test_001_node0_done
+Training complete!
+[RTT server] Listening on port 19876
+[Agent] Started | node=node0 | job=baseline_signal_test_001 | peers=['node1', 'node2']
+[Agent] Read epoch signal file: /workspace/data/sync/baseline_signal_test_001_node0_epoch_1.json
+[Agent] Epoch 1 complete | all_reduce=22.3ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 0.36 ms
+  [RTT] → node2: 0.21 ms
+[Agent] Wrote metrics | nic_sent=20.0MB/s nic_recv=20.0MB/s rtt=0.3560419995665143ms
+[Agent] Read epoch signal file: /workspace/data/sync/baseline_signal_test_001_node0_epoch_2.json
+[Agent] Epoch 2 complete | all_reduce=25.4ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 0.45 ms
+  [RTT] → node2: 0.30 ms
+[Agent] Wrote metrics | nic_sent=19.1MB/s nic_recv=19.1MB/s rtt=0.4495830003179435ms
+[Agent] Read epoch signal file: /workspace/data/sync/baseline_signal_test_001_node0_epoch_3.json
+[Agent] Epoch 3 complete | all_reduce=24.4ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: unreachable
+  [RTT] → node2: 0.17 ms
+[Agent] Wrote metrics | nic_sent=18.8MB/s nic_recv=18.8MB/s rtt=0.16600000026301132ms
+[Agent] Training complete signal received. Shutting down.
+[Agent] Exiting.
+[Launch] Starting telemetry agent on node0...
+[Launch] Starting training on node0...
+[Launch] Training finished on node0.
+[Launch] Done.

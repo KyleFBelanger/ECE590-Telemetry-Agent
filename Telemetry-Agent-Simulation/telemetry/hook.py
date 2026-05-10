@@ -6,8 +6,8 @@ Key change from v1:
   node's agent reads that node's actual measured all-reduce time rather
   than rank 0's value broadcast to everyone.
 
-  Signal file per node:
-    /workspace/data/sync/<job_id>_<node_id>_epoch.json
+  Signal file per node and epoch:
+    /workspace/data/sync/<job_id>_<node_id>_epoch_<epoch>.json
     { "epoch": 2, "all_reduce_ms": 31.4, "node_id": "node1", "timestamp": ... }
 
   Why per-node timing differs in practice:
@@ -92,10 +92,10 @@ def training_done():
 
 def _write_epoch_signal(epoch, all_reduce_ms):
     """
-    Atomic write to a per-node signal file.
-    Agent reads /workspace/data/sync/<job_id>_<node_id>_epoch.json
+    Atomic write to a per-node, per-epoch signal file.
+    Agent reads /workspace/data/sync/<job_id>_<node_id>_epoch_<epoch>.json
     """
-    signal_path = os.path.join(SYNC_DIR, f'{_job_id}_{_node_id}_epoch.json')
+    signal_path = os.path.join(SYNC_DIR, f'{_job_id}_{_node_id}_epoch_{epoch}.json')
     tmp_path    = signal_path + '.tmp'
 
     payload = {

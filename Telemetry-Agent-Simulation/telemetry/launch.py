@@ -48,6 +48,12 @@ def main():
     print(f"[Launch] Starting telemetry agent on {args.node_id}...")
     agent_proc = subprocess.Popen(agent_cmd, env=env)
     time.sleep(1.0)   # give the RTT server a moment to bind
+    if agent_proc.poll() is not None:
+        print(
+            f"[Launch] Telemetry agent exited early on {args.node_id} "
+            f"with code {agent_proc.returncode}."
+        )
+        return agent_proc.returncode or 1
 
     # Start training
     print(f"[Launch] Starting training on {args.node_id}...")
@@ -55,7 +61,7 @@ def main():
     train_proc = subprocess.Popen(train_cmd, env=env)
 
     # Wait for training to finish
-    train_proc.wait()
+    train_returncode = train_proc.wait()
     print(f"[Launch] Training finished on {args.node_id}.")
 
     # Agent will exit on its own via the done signal, but give it a moment
@@ -64,9 +70,16 @@ def main():
     except subprocess.TimeoutExpired:
         print("[Launch] Agent did not exit cleanly — terminating.")
         agent_proc.terminate()
+        try:
+            agent_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            print("[Launch] Agent still running — killing.")
+            agent_proc.kill()
+            agent_proc.wait()
 
     print(f"[Launch] Done.")
+    return train_returncode or agent_proc.returncode or 0
 
 
 if __name__ == '__main__':
-    main()
+    raise SystemExit(main())

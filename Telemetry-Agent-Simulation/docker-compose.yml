@@ -7,12 +7,16 @@ services:
     build: .
     container_name: node0
     hostname: node0
+    cap_add:
+      - NET_ADMIN
     networks:
       - training-net
     volumes:
       - ./training:/workspace/training
       - ./results:/workspace/results
       - ./data:/workspace/data
+      - ./tools:/workspace/tools
+      - ./telemetry:/workspace/telemetry
     environment:
       - MASTER_ADDR=node0
       - MASTER_PORT=29500
@@ -25,12 +29,16 @@ services:
     build: .
     container_name: node1
     hostname: node1
+    cap_add:
+      - NET_ADMIN
     networks:
       - training-net
     volumes:
       - ./training:/workspace/training
       - ./results:/workspace/results
       - ./data:/workspace/data
+      - ./tools:/workspace/tools
+      - ./telemetry:/workspace/telemetry
     environment:
       - MASTER_ADDR=node0
       - MASTER_PORT=29500
@@ -43,12 +51,16 @@ services:
     build: .
     container_name: node2
     hostname: node2
+    cap_add:
+      - NET_ADMIN
     networks:
       - training-net
     volumes:
       - ./training:/workspace/training
       - ./results:/workspace/results
       - ./data:/workspace/data
+      - ./tools:/workspace/tools
+      - ./telemetry:/workspace/telemetry
     environment:
       - MASTER_ADDR=node0
       - MASTER_PORT=29500
@@ -68,7 +80,21 @@ services:
       - ./data:/workspace/data
     ports:
       - "5050:5000"
-    command: python3 dashboard/app.py   
+    command: python3 dashboard/app.py
+    tty: true
+    stdin_open: true
+
+  scorer:
+    build: .
+    container_name: scorer
+    hostname: scorer
+    networks:
+      - training-net
+    volumes:
+      - ./dashboard:/workspace/dashboard
+      - ./data:/workspace/data
+    command: python3 dashboard/auto_score.py
+    restart: unless-stopped
     tty: true
     stdin_open: true
 
