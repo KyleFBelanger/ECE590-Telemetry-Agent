@@ -20,9 +20,12 @@ Usage (inside the telemetry container):
 """
 
 import argparse
+import errno
+import fcntl
 import os
 import socket
 import sqlite3
+import sys
 import time
 import json
 import threading
@@ -30,6 +33,7 @@ import psutil
 
 # ── config ────────────────────────────────────────────────────────────────────
 DB_PATH        = '/workspace/data/metrics.db'
+DB_LOCK_PATH   = '/workspace/data/metrics.db.lock'
 SYNC_DIR       = '/workspace/data/sync'       # shared dir for epoch signals
 NIC_INTERVAL   = 2.0    # seconds between NIC counter samples during training
 RTT_PORT       = 19876  # port the RTT probe server listens on
@@ -44,19 +48,66 @@ def get_conn():
     """Return a SQLite connection. Called per-thread to avoid sharing."""
     conn = sqlite3.connect(DB_PATH, timeout=10)
     conn.execute("PRAGMA journal_mode=WAL")   # allows concurrent readers/writers
+    conn.execute("PRAGMA busy_timeout=5000")
     return conn
 
 
-def insert_metric(conn, node_id, job_id, epoch,
-                  nic_sent, nic_recv, all_reduce_ms, rtt_ms):
-    conn.execute("""
-        INSERT INTO metrics
-            (timestamp, node_id, job_id, nic_bytes_sent, nic_bytes_recv,
-             all_reduce_ms, rtt_ms, epoch)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    """, (time.time(), node_id, job_id,
-          nic_sent, nic_recv, all_reduce_ms, rtt_ms, epoch))
-    conn.commit()
+class db_write_lock:
+    def __enter__(self):
+        os.makedirs(os.path.dirname(DB_LOCK_PATH), exist_ok=True)
+        self.lock_file = open(DB_LOCK_PATH, 'w')
+        fcntl.flock(self.lock_file, fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        fcntl.flock(self.lock_file, fcntl.LOCK_UN)
+        self.lock_file.close()
+
+
+def insert_metric(node_id, job_id, epoch,
+                  nic_sent, nic_recv, all_reduce_ms, rtt_ms, peer_rtts=None):
+    for attempt in range(3):
+        conn = None
+        try:
+            with db_write_lock():
+                conn = get_conn()
+                now = time.time()
+                conn.execute("""
+                    INSERT INTO metrics
+                        (timestamp, node_id, job_id, nic_bytes_sent, nic_bytes_recv,
+                         all_reduce_ms, rtt_ms, epoch)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """, (now, node_id, job_id,
+                      nic_sent, nic_recv, all_reduce_ms, rtt_ms, epoch))
+
+                for peer_node_id, peer_rtt_ms in (peer_rtts or {}).items():
+                    conn.execute("""
+                        INSERT INTO rtt_metrics
+                            (timestamp, job_id, node_id, peer_node_id, rtt_ms, epoch)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                    """, (now, job_id, node_id, peer_node_id, peer_rtt_ms, epoch))
+                conn.commit()
+
+                row = conn.execute(
+                    """
+                    SELECT COUNT(*)
+                    FROM metrics
+                    WHERE job_id = ? AND node_id = ? AND epoch = ?
+                    """,
+                    (job_id, node_id, epoch),
+                ).fetchone()
+            if row and row[0] > 0:
+                return
+            raise sqlite3.OperationalError("insert verification failed")
+        except sqlite3.OperationalError as exc:
+            retryable = "locked" in str(exc).lower() or "verification failed" in str(exc).lower()
+            if not retryable or attempt == 2:
+                raise
+            print(f"[Agent] SQLite write for epoch {epoch} did not stick; retrying...", flush=True)
+            time.sleep(0.5 * (attempt + 1))
+        finally:
+            if conn is not None:
+                conn.close()
 
 
 # ── NIC counters ──────────────────────────────────────────────────────────────
@@ -92,18 +143,25 @@ def compute_nic_rate(snap1, snap2, elapsed):
 
 # ── RTT probe server ──────────────────────────────────────────────────────────
 
-def start_rtt_server(stop_event):
+def create_rtt_server_socket():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        server.bind(('0.0.0.0', RTT_PORT))
+        server.listen(10)
+        server.settimeout(1.0)
+    except OSError:
+        server.close()
+        raise
+    return server
+
+
+def start_rtt_server(server, stop_event):
     """
     Lightweight TCP echo server. Runs in a background thread.
     Peers connect, send PING, we echo it back immediately.
     This is what makes RTT measurement possible without ICMP privileges.
     """
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind(('0.0.0.0', RTT_PORT))
-    server.listen(10)
-    server.settimeout(1.0)
-
     print(f"[RTT server] Listening on port {RTT_PORT}")
 
     while not stop_event.is_set():
@@ -181,14 +239,14 @@ def measure_all_rtts(peers):
 #   (a) when an epoch has completed (safe to run RTT probes)
 #   (b) what the all-reduce time was for that epoch
 
-def wait_for_epoch_signal(job_id, node_id, last_epoch, timeout=300):
+def wait_for_epoch_signal(job_id, node_id, expected_epoch, timeout=300):
     """
-    Block until the training hook signals that a new epoch has completed.
+    Block until the training hook signals that the next expected epoch completed.
     Reads the per-node signal file so each agent gets its own node's
     actual measured all-reduce time, not rank 0's shared value.
-    Returns (epoch_number, all_reduce_ms) or None on timeout.
+    Returns (epoch_number, all_reduce_ms) or None on timeout/done-before-file.
     """
-    signal_path = os.path.join(SYNC_DIR, f'{job_id}_{node_id}_epoch.json')
+    signal_path = os.path.join(SYNC_DIR, f'{job_id}_{node_id}_epoch_{expected_epoch}.json')
     deadline = time.time() + timeout
 
     while time.time() < deadline:
@@ -197,10 +255,17 @@ def wait_for_epoch_signal(job_id, node_id, last_epoch, timeout=300):
                 with open(signal_path, 'r') as f:
                     data = json.load(f)
                 epoch = data.get('epoch', 0)
-                if epoch > last_epoch:
+                if epoch == expected_epoch:
+                    print(f"[Agent] Read epoch signal file: {signal_path}")
                     return epoch, data.get('all_reduce_ms', None)
             except (json.JSONDecodeError, KeyError):
                 pass
+        elif read_final_signal(job_id, node_id):
+            print(
+                f"[Agent] Done signal exists before epoch {expected_epoch} file; "
+                "assuming training stopped early"
+            )
+            return None
         time.sleep(0.2)
 
     return None
@@ -227,13 +292,26 @@ def run_agent(node_id, job_id, peers):
     """
     os.makedirs(SYNC_DIR, exist_ok=True)
 
-    conn = get_conn()
     stop_event = threading.Event()
 
     # Start RTT echo server so peers can probe us
+    try:
+        server_socket = create_rtt_server_socket()
+    except OSError as exc:
+        if exc.errno == errno.EADDRINUSE:
+            print(
+                f"[RTT server] ERROR: port {RTT_PORT} is already in use. "
+                "Run ./scripts/clean_stale_processes.sh and retry.",
+                file=sys.stderr,
+                flush=True,
+            )
+        else:
+            print(f"[RTT server] ERROR: failed to bind port {RTT_PORT}: {exc}", file=sys.stderr, flush=True)
+        raise SystemExit(1)
+
     server_thread = threading.Thread(
         target=start_rtt_server,
-        args=(stop_event,),
+        args=(server_socket, stop_event,),
         daemon=True
     )
     server_thread.start()
@@ -266,25 +344,28 @@ def run_agent(node_id, job_id, peers):
 
     print(f"[Agent] Started | node={node_id} | job={job_id} | peers={peers}")
 
-    last_epoch = 0
+    expected_epoch = 1
 
     while True:
         # Wait for training to signal epoch complete
-        result = wait_for_epoch_signal(job_id, node_id, last_epoch)
+        result = wait_for_epoch_signal(job_id, node_id, expected_epoch)
 
         if result is None:
             print("[Agent] Timeout waiting for epoch signal — assuming training finished")
             break
 
         epoch, all_reduce_ms = result
-        last_epoch = epoch
-        print(f"[Agent] Epoch {epoch} complete | all_reduce={all_reduce_ms:.1f}ms")
+        expected_epoch = epoch + 1
+        ar_label = f"{all_reduce_ms:.1f}ms" if all_reduce_ms is not None else "unknown"
+        print(f"[Agent] Epoch {epoch} complete | all_reduce={ar_label}")
 
         # RTT probes run NOW — in the idle window between epochs
         # This is the gating mechanism described in the challenges section
+        peer_rtts = {}
         if peers:
             print(f"[Agent] Running RTT probes (idle window)...")
-            worst_rtt, _ = measure_all_rtts(peers)
+            worst_rtt, measured_rtts = measure_all_rtts(peers)
+            peer_rtts = {peer: measured_rtts.get(peer) for peer in peers}
         else:
             worst_rtt = None
 
@@ -294,18 +375,19 @@ def run_agent(node_id, job_id, peers):
             recv = nic_recv_rate
 
         insert_metric(
-            conn,
             node_id=node_id,
             job_id=job_id,
             epoch=epoch,
             nic_sent=sent,
             nic_recv=recv,
             all_reduce_ms=all_reduce_ms,
-            rtt_ms=worst_rtt
+            rtt_ms=worst_rtt,
+            peer_rtts=peer_rtts,
         )
 
         print(f"[Agent] Wrote metrics | nic_sent={sent/1e6:.1f}MB/s "
-              f"nic_recv={recv/1e6:.1f}MB/s rtt={worst_rtt}ms")
+              f"nic_recv={recv/1e6:.1f}MB/s rtt={worst_rtt}ms "
+              f"peer_rtt_rows={len(peer_rtts)}")
 
         # Check if training is done
         if read_final_signal(job_id, node_id):
@@ -313,7 +395,6 @@ def run_agent(node_id, job_id, peers):
             break
 
     stop_event.set()
-    conn.close()
     print("[Agent] Exiting.")
 
 
