@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-nodes=(node0 node1 node2)
+read -r -a nodes <<< "${NODES:-node0 node1 node2 node3 node4}"
 patterns=(
   "telemetry/launch.py"
   "telemetry/agent.py"

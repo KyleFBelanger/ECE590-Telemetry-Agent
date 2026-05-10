@@ -1,0 +1,40 @@
+[Hook] Installed | job=recommended_without_node1_001 rank=0 node=node0
+[Master] Cluster ready — 4 nodes connected | job_id=recommended_without_node1_001 | epochs=3
+[Hook] Epoch 1 | node=node0 | all_reduce=34.6ms
+Epoch 1 | Loss: 1.6835 | Time: 9.85s
+[Hook] Epoch 2 | node=node0 | all_reduce=34.7ms
+Epoch 2 | Loss: 0.6352 | Time: 9.90s
+[Hook] Epoch 3 | node=node0 | all_reduce=34.2ms
+Epoch 3 | Loss: 0.4339 | Time: 9.74s
+[Hook] Written done signal → /workspace/data/sync/recommended_without_node1_001_node0_done
+Training complete!
+[RTT server] Listening on port 19876
+[Agent] Started | node=node0 | job=recommended_without_node1_001 | peers=['node2', 'node4', 'node3']
+[Agent] Read epoch signal file: /workspace/data/sync/recommended_without_node1_001_node0_epoch_1.json
+[Agent] Epoch 1 complete | all_reduce=34.6ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node2: 0.62 ms
+  [RTT] → node4: 0.29 ms
+  [RTT] → node3: 0.07 ms
+[Agent] Wrote metrics | nic_sent=16.2MB/s nic_recv=16.2MB/s rtt=0.6195420000949525ms peer_rtt_rows=3
+[Agent] Read epoch signal file: /workspace/data/sync/recommended_without_node1_001_node0_epoch_2.json
+[Agent] Epoch 2 complete | all_reduce=34.7ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node2: 0.39 ms
+  [RTT] → node4: 0.28 ms
+  [RTT] → node3: 0.19 ms
+[Agent] Wrote metrics | nic_sent=15.9MB/s nic_recv=15.9MB/s rtt=0.3874590001942124ms peer_rtt_rows=3
+[Agent] Read epoch signal file: /workspace/data/sync/recommended_without_node1_001_node0_epoch_3.json
+[Agent] Epoch 3 complete | all_reduce=34.2ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node2: 0.26 ms
+  [RTT] → node4: 0.24 ms
+  [RTT] → node3: 0.34 ms
+[Agent] Wrote metrics | nic_sent=16.5MB/s nic_recv=16.5MB/s rtt=0.3420829998503905ms peer_rtt_rows=3
+[Agent] Training done; keeping RTT server alive for final peer probes...
+[Agent] Final RTT grace period complete. Shutting down.
+[Agent] Exiting.
+[Launch] Starting telemetry agent on node0...
+[Launch] Starting training on node0...
+[Launch] Training finished on node0.
+[Launch] Done.

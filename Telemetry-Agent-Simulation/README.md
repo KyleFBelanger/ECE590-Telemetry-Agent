@@ -2,7 +2,7 @@
 
 Distributed training telemetry simulation for quantifying node-level degradation
 in DDP training jobs. The system collects NIC counters, inter-node RTT, and
-all-reduce timing from three training containers, stores metrics in SQLite, and
+all-reduce timing from five training containers, stores metrics in SQLite, and
 shows live results in a Flask dashboard.
 
 ## Project Structure
@@ -55,6 +55,8 @@ Expected containers:
 node0
 node1
 node2
+node3
+node4
 dashboard
 telemetry
 scorer
@@ -94,9 +96,16 @@ Run a baseline job:
 Logs are written to:
 
 ```text
-results/<job_id>_node0.log
-results/<job_id>_node1.log
-results/<job_id>_node2.log
+results/<job_id>_node*.log
+```
+
+The default training cluster is now five nodes: `node0`, `node1`, `node2`,
+`node3`, and `node4`. `WORLD_SIZE=5`, and `run_job.sh` launches all five nodes
+automatically. To run a temporary 3-node job for debugging, override the node
+list:
+
+```bash
+NODES="node0 node1 node2" ./scripts/run_job.sh three_node_debug_001
 ```
 
 Show raw per-node averages for a job:
@@ -105,14 +114,59 @@ Show raw per-node averages for a job:
 ./scripts/show_job_averages.sh baseline001
 ```
 
-A correct default 3-epoch job should produce 3 metric rows for each node. Use
-`show_job_averages.sh` to verify that node0, node1, and node2 all show `rows`
-equal to `3`.
+A correct default 3-epoch 5-node job should produce 3 metric rows for each
+node, for 15 total rows in `metrics`. Use `show_job_averages.sh` to verify that
+node0 through node4 all show `rows` equal to `3`.
 
 Run a longer job by setting `EPOCHS`:
 
 ```bash
-EPOCHS=10 ./scripts/run_job.sh big_baseline001
+EPOCHS=10 ./scripts/run_job.sh five_big_baseline_001
+```
+
+## 5-Node Validation Workflow
+
+Boot:
+
+```bash
+docker network create training-net 2>/dev/null || true
+docker compose up -d --build
+```
+
+Reset:
+
+```bash
+./scripts/reset_experiment.sh
+```
+
+Five-node baseline:
+
+```bash
+./scripts/run_job.sh five_baseline_001
+./scripts/show_job_averages.sh five_baseline_001
+./scripts/show_rtt_matrix.sh five_baseline_001
+./scripts/check_db.sh
+```
+
+Five-node degraded node test:
+
+```bash
+./scripts/apply_netem.sh node3 delay 20ms
+./scripts/run_job.sh five_node3_delay_20ms_001
+./scripts/clear_netem.sh node3
+./scripts/show_job_averages.sh five_node3_delay_20ms_001
+./scripts/show_rtt_matrix.sh five_node3_delay_20ms_001
+./scripts/check_db.sh
+```
+
+Expected:
+- baseline: low RTT paths across all nodes, and the recommendation avoids nobody
+- degraded node3: high RTT paths involving node3, healthy paths among the other nodes, and the recommendation avoids node3
+
+Longer job:
+
+```bash
+EPOCHS=10 ./scripts/run_job.sh five_big_baseline_001
 ```
 
 ## Netem Experiments
@@ -120,38 +174,38 @@ EPOCHS=10 ./scripts/run_job.sh big_baseline001
 The Docker image installs `iproute2`, and node containers have `NET_ADMIN` so
 `tc/netem` can degrade a selected node interface.
 
-Apply delay to node1:
+Apply delay to a node:
 
 ```bash
-./scripts/apply_netem.sh node1 delay 50ms
-./scripts/show_netem.sh node1
-./scripts/run_job.sh node1_delay_50ms_001
-./scripts/clear_netem.sh node1
+./scripts/apply_netem.sh node3 delay 20ms
+./scripts/show_netem.sh node3
+./scripts/run_job.sh five_node3_delay_20ms_001
+./scripts/clear_netem.sh node3
 ```
 
 Apply packet loss:
 
 ```bash
-./scripts/apply_netem.sh node1 loss 5%
+./scripts/apply_netem.sh node3 loss 5%
 ```
 
 Apply bandwidth limiting:
 
 ```bash
-./scripts/apply_netem.sh node1 rate 10mbit
+./scripts/apply_netem.sh node3 rate 10mbit
 ```
 
 Combine settings:
 
 ```bash
-./scripts/apply_netem.sh node1 delay 50ms loss 2% rate 10mbit
+./scripts/apply_netem.sh node3 delay 50ms loss 2% rate 10mbit
 ```
 
 Always clear netem after a degradation run unless you intentionally want the
 next run to inherit the same network condition:
 
 ```bash
-./scripts/clear_netem.sh node1
+./scripts/clear_netem.sh node3
 ```
 
 ## Recovery and Safe Testing Workflow
@@ -189,14 +243,14 @@ After pressing Ctrl+C during a job, run:
 
 ```bash
 ./scripts/clean_stale_processes.sh
-./scripts/clear_netem.sh node1
+./scripts/clear_netem.sh node3
 ./scripts/check_db.sh
 ```
 
 Do not reuse the same job ID after an interrupted run unless you intentionally
 delete the old partial rows with `reset_experiment.sh`. Prefer a new job ID,
-for example `node1_delay_50ms_002` instead of rerunning
-`node1_delay_50ms_001`.
+for example `five_node3_delay_20ms_002` instead of rerunning
+`five_node3_delay_20ms_001`.
 
 `run_job.sh` now runs stale-process cleanup before every job and traps Ctrl+C
 so it can kill leftover `telemetry/launch.py`, `telemetry/agent.py`, and
@@ -207,31 +261,31 @@ so it can kill leftover `telemetry/launch.py`, `telemetry/agent.py`, and
 ```bash
 ./scripts/reset_experiment.sh --logs
 
-./scripts/run_job.sh baseline001
+./scripts/run_job.sh five_baseline_001
 
-./scripts/apply_netem.sh node1 delay 50ms
-./scripts/run_job.sh node1_delay_50ms_001
-./scripts/clear_netem.sh node1
+./scripts/apply_netem.sh node3 delay 20ms
+./scripts/run_job.sh five_node3_delay_20ms_001
+./scripts/clear_netem.sh node3
 
-./scripts/apply_netem.sh node1 loss 5%
-./scripts/run_job.sh node1_loss_5pct_001
-./scripts/clear_netem.sh node1
+./scripts/apply_netem.sh node3 loss 5%
+./scripts/run_job.sh five_node3_loss_5pct_001
+./scripts/clear_netem.sh node3
 
-./scripts/apply_netem.sh node1 rate 10mbit
-./scripts/run_job.sh node1_rate_10mbit_001
-./scripts/clear_netem.sh node1
+./scripts/apply_netem.sh node3 rate 10mbit
+./scripts/run_job.sh five_node3_rate_10mbit_001
+./scripts/clear_netem.sh node3
 
-EPOCHS=10 ./scripts/run_job.sh big_baseline001
+EPOCHS=10 ./scripts/run_job.sh five_big_baseline_001
 
-./scripts/apply_netem.sh node1 delay 50ms
-EPOCHS=10 ./scripts/run_job.sh big_node1_delay_50ms_001
-./scripts/clear_netem.sh node1
+./scripts/apply_netem.sh node3 delay 20ms
+EPOCHS=10 ./scripts/run_job.sh five_big_node3_delay_20ms_001
+./scripts/clear_netem.sh node3
 ```
 
 After any run, inspect raw averages:
 
 ```bash
-./scripts/show_job_averages.sh baseline001
+./scripts/show_job_averages.sh five_baseline_001
 ```
 
 ## Manual Scoring
@@ -291,28 +345,28 @@ Baseline validation:
 
 ```bash
 ./scripts/reset_experiment.sh
-./scripts/run_job.sh baseline_final_001
-./scripts/show_job_averages.sh baseline_final_001
+./scripts/run_job.sh five_baseline_001
+./scripts/show_job_averages.sh five_baseline_001
 ./scripts/check_db.sh
 ```
 
 20ms delay validation:
 
 ```bash
-./scripts/apply_netem.sh node1 delay 20ms
-./scripts/run_job.sh node1_delay_20ms_001
-./scripts/clear_netem.sh node1
-./scripts/show_job_averages.sh node1_delay_20ms_001
+./scripts/apply_netem.sh node3 delay 20ms
+./scripts/run_job.sh five_node3_delay_20ms_001
+./scripts/clear_netem.sh node3
+./scripts/show_job_averages.sh five_node3_delay_20ms_001
 ./scripts/check_db.sh
 ```
 
 50ms delay validation:
 
 ```bash
-./scripts/apply_netem.sh node1 delay 50ms
-./scripts/run_job.sh node1_delay_50ms_001
-./scripts/clear_netem.sh node1
-./scripts/show_job_averages.sh node1_delay_50ms_001
+./scripts/apply_netem.sh node3 delay 50ms
+./scripts/run_job.sh five_node3_delay_50ms_001
+./scripts/clear_netem.sh node3
+./scripts/show_job_averages.sh five_node3_delay_50ms_001
 ./scripts/check_db.sh
 ```
 
@@ -335,11 +389,11 @@ The `rtt_metrics` table stores directed per-peer RTT rows:
 node_id -> peer_node_id, job_id, epoch, rtt_ms
 ```
 
-For a default 3-node, 3-epoch job, expect:
+For a default 5-node, 3-epoch job, expect:
 
 ```text
-metrics rows:     9   (3 nodes x 3 epochs)
-rtt_metrics rows: 18  (3 nodes x 2 peers x 3 epochs)
+metrics rows:     15  (5 nodes x 3 epochs)
+rtt_metrics rows: 60  (5 nodes x 4 peers x 3 epochs)
 ```
 
 Inspect per-peer RTT paths with:
@@ -359,19 +413,76 @@ The recommendation is intentionally simple and explainable:
 - avoid repeated high-RTT or timeout paths
 - say "No clearly degraded node detected" when risks are similar
 
+## Advisory Scheduler Recommendation Layer
+
+The advisory scheduler recommendation layer reads `health_scores` and
+per-peer RTT data from `rtt_metrics`. It identifies nodes that appear on
+high-latency or timeout paths, then recommends which nodes to prefer or avoid
+for future distributed training jobs.
+
+This is advisory only. It does not replace SLURM, Kubernetes, or any real
+cluster scheduler, and the dashboard never launches jobs automatically.
+
+Inspect the recommendation directly:
+
+```bash
+./scripts/show_recommendation.sh
+./scripts/show_recommendation.sh <job_id>
+```
+
+Recommended validation workflow:
+
+```bash
+./scripts/reset_experiment.sh
+./scripts/run_job.sh five_baseline_clean_001
+./scripts/show_job_averages.sh five_baseline_clean_001
+./scripts/show_rtt_matrix.sh five_baseline_clean_001
+./scripts/show_recommendation.sh five_baseline_clean_001
+```
+
+Expected: avoid nobody.
+
+Then degrade node1:
+
+```bash
+./scripts/apply_netem.sh node1 delay 20ms
+./scripts/run_job.sh five_node1_delay_20ms_001
+./scripts/show_rtt_matrix.sh five_node1_delay_20ms_001
+./scripts/show_recommendation.sh five_node1_delay_20ms_001
+```
+
+Expected: avoid node1 because it appears on high-latency RTT paths.
+
+Scheduler-style demo validation:
+
+```bash
+NODES="node0 node2 node3 node4" ./scripts/run_job.sh recommended_without_node1_001
+./scripts/clear_netem.sh node1
+./scripts/show_job_averages.sh recommended_without_node1_001
+./scripts/show_rtt_matrix.sh recommended_without_node1_001
+```
+
+There is also a convenience helper that reads the current recommendation and
+runs the next job with the recommended nodes using the existing `NODES`
+override:
+
+```bash
+./scripts/run_recommended_job.sh recommended_without_node1_001 five_node1_delay_20ms_001
+```
+
 Suggested RTT/recommendation workflow:
 
 ```bash
 ./scripts/reset_experiment.sh
-./scripts/run_job.sh baseline_final_001
-./scripts/show_job_averages.sh baseline_final_001
-./scripts/show_rtt_matrix.sh baseline_final_001
+./scripts/run_job.sh five_baseline_001
+./scripts/show_job_averages.sh five_baseline_001
+./scripts/show_rtt_matrix.sh five_baseline_001
 
-./scripts/apply_netem.sh node1 delay 50ms
-./scripts/run_job.sh node1_delay_50ms_001
-./scripts/clear_netem.sh node1
-./scripts/show_job_averages.sh node1_delay_50ms_001
-./scripts/show_rtt_matrix.sh node1_delay_50ms_001
+./scripts/apply_netem.sh node3 delay 20ms
+./scripts/run_job.sh five_node3_delay_20ms_001
+./scripts/clear_netem.sh node3
+./scripts/show_job_averages.sh five_node3_delay_20ms_001
+./scripts/show_rtt_matrix.sh five_node3_delay_20ms_001
 ```
 
 Expected result:
@@ -379,6 +490,10 @@ Expected result:
 - degraded node/link experiments show high RTT paths involving the degraded node
 - the dashboard recommendation suggests avoiding the degraded node when
   confidence is high enough
+
+For a 5-node job, `show_rtt_matrix.sh` should show 20 directed node pairs.
+When node3 is degraded, high RTT paths should involve node3 while paths among
+node0, node1, node2, and node4 remain comparatively low.
 
 ## Troubleshooting
 
@@ -399,7 +514,7 @@ docker exec -it dashboard python3 dashboard/init_db.py
 If a training run hangs or port `29500` is busy:
 
 ```bash
-docker compose restart node0 node1 node2
+docker compose restart node0 node1 node2 node3 node4
 ```
 
 If a degraded network condition seems to persist:
@@ -408,6 +523,8 @@ If a degraded network condition seems to persist:
 ./scripts/clear_netem.sh node0
 ./scripts/clear_netem.sh node1
 ./scripts/clear_netem.sh node2
+./scripts/clear_netem.sh node3
+./scripts/clear_netem.sh node4
 ```
 
 ## How It Works

@@ -1,0 +1,38 @@
+[Hook] Installed | job=five_node1_delay_20ms_001 rank=1 node=node1
+[Hook] Epoch 1 | node=node1 | all_reduce=199.6ms
+[Hook] Epoch 2 | node=node1 | all_reduce=199.7ms
+[Hook] Epoch 3 | node=node1 | all_reduce=198.9ms
+[Hook] Written done signal → /workspace/data/sync/five_node1_delay_20ms_001_node1_done
+[RTT server] Listening on port 19876
+[Agent] Started | node=node1 | job=five_node1_delay_20ms_001 | peers=['node0', 'node2', 'node3', 'node4']
+[Agent] Read epoch signal file: /workspace/data/sync/five_node1_delay_20ms_001_node1_epoch_1.json
+[Agent] Epoch 1 complete | all_reduce=199.6ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 42.56 ms
+  [RTT] → node2: 41.71 ms
+  [RTT] → node3: 43.46 ms
+  [RTT] → node4: 43.26 ms
+[Agent] Wrote metrics | nic_sent=3.4MB/s nic_recv=3.4MB/s rtt=43.46045800002685ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_node1_delay_20ms_001_node1_epoch_2.json
+[Agent] Epoch 2 complete | all_reduce=199.7ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 42.64 ms
+  [RTT] → node2: 42.96 ms
+  [RTT] → node3: 43.04 ms
+  [RTT] → node4: 42.38 ms
+[Agent] Wrote metrics | nic_sent=3.4MB/s nic_recv=3.4MB/s rtt=43.04283300007228ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_node1_delay_20ms_001_node1_epoch_3.json
+[Agent] Epoch 3 complete | all_reduce=198.9ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 42.43 ms
+  [RTT] → node2: 42.64 ms
+  [RTT] → node3: 44.96 ms
+  [RTT] → node4: 47.00 ms
+[Agent] Wrote metrics | nic_sent=3.3MB/s nic_recv=3.3MB/s rtt=47.002750000046944ms peer_rtt_rows=4
+[Agent] Training done; keeping RTT server alive for final peer probes...
+[Agent] Final RTT grace period complete. Shutting down.
+[Agent] Exiting.
+[Launch] Starting telemetry agent on node1...
+[Launch] Starting training on node1...
+[Launch] Training finished on node1.
+[Launch] Done.

@@ -385,7 +385,18 @@ def load_dashboard_data(selected_job=None):
                 "recommendation_avoid_nodes": recommendation_avoid,
             }
 
-        recommendation = compute_recommendation(conn, selected_job_id=selected_job)
+        try:
+            recommendation = compute_recommendation(conn, selected_job_id=selected_job)
+        except Exception as exc:
+            recommendation = {
+                "recommended_nodes": [],
+                "avoid_nodes": [],
+                "confidence": 0.0,
+                "reason": f"Recommendation temporarily unavailable: {exc}",
+                "mode": "no_data",
+                "selected_job_id": selected_job,
+                "signals": {},
+            }
         if diagnosis:
             diagnosis["recommendation_avoid_nodes"] = recommendation.get("avoid_nodes", [])
 
@@ -501,7 +512,7 @@ TEMPLATE = """
 
     .grid { display: grid; gap: 16px; }
     .summary-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); margin-bottom: 16px; }
-    .health-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); margin-bottom: 16px; }
+    .health-grid { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: 16px; }
     .card, .section {
       background: linear-gradient(180deg, rgba(30, 41, 59, 0.78), rgba(15, 23, 42, 0.92));
       border: 1px solid var(--line);
@@ -824,10 +835,13 @@ TEMPLATE = """
 
       const recommended = rec.recommended_nodes || [];
       const avoid = rec.avoid_nodes || [];
+      const notEvaluated = rec.not_evaluated_nodes || rec.signals?.not_evaluated_nodes || [];
       const nodeRisk = rec.signals?.node_risk || {};
       const modeLabel = rec.mode === "selected_job"
         ? `Selected-job RTT recommendation${rec.selected_job_id ? ` for ${rec.selected_job_id}` : ""}`
-        : "Historical RTT and health recommendation";
+        : rec.mode === "recent_history"
+          ? "Recent-history RTT and health recommendation"
+          : "Recommendation unavailable";
       const riskRows = Object.entries(nodeRisk)
         .sort((a, b) => (b[1].risk_score || 0) - (a[1].risk_score || 0))
         .map(([node, stats]) => `
@@ -863,6 +877,12 @@ TEMPLATE = """
             <div class="hint" style="color: var(--text); line-height: 1.45;">${escapeHtml(rec.reason || "Not enough RTT data yet.")}</div>
           </div>
         </div>
+        ${notEvaluated.length ? `
+          <div class="callout" style="margin-bottom: 14px;">
+            <strong>Not evaluated in selected job:</strong>
+            ${notEvaluated.map((node) => pill("neutral", node)).join(" ")}
+          </div>
+        ` : ""}
         ${riskRows ? `
           <table>
             <thead>

@@ -1,0 +1,43 @@
+[Hook] Installed | job=five_baseline_clean_001 rank=0 node=node0
+[Master] Cluster ready — 5 nodes connected | job_id=five_baseline_clean_001 | epochs=3
+[Hook] Epoch 1 | node=node0 | all_reduce=41.8ms
+Epoch 1 | Loss: 1.9064 | Time: 9.43s
+[Hook] Epoch 2 | node=node0 | all_reduce=42.7ms
+Epoch 2 | Loss: 0.8383 | Time: 9.61s
+[Hook] Epoch 3 | node=node0 | all_reduce=41.7ms
+Epoch 3 | Loss: 0.5270 | Time: 9.40s
+[Hook] Written done signal → /workspace/data/sync/five_baseline_clean_001_node0_done
+Training complete!
+[RTT server] Listening on port 19876
+[Agent] Started | node=node0 | job=five_baseline_clean_001 | peers=['node1', 'node2', 'node3', 'node4']
+[Agent] Read epoch signal file: /workspace/data/sync/five_baseline_clean_001_node0_epoch_1.json
+[Agent] Epoch 1 complete | all_reduce=41.8ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 0.14 ms
+  [RTT] → node2: 0.07 ms
+  [RTT] → node3: 0.07 ms
+  [RTT] → node4: 0.16 ms
+[Agent] Wrote metrics | nic_sent=13.8MB/s nic_recv=13.8MB/s rtt=0.16058299979704316ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_baseline_clean_001_node0_epoch_2.json
+[Agent] Epoch 2 complete | all_reduce=42.7ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 0.14 ms
+  [RTT] → node2: 0.07 ms
+  [RTT] → node3: 0.07 ms
+  [RTT] → node4: 0.06 ms
+[Agent] Wrote metrics | nic_sent=13.4MB/s nic_recv=13.4MB/s rtt=0.14308300001175667ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_baseline_clean_001_node0_epoch_3.json
+[Agent] Epoch 3 complete | all_reduce=41.7ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 0.15 ms
+  [RTT] → node2: 0.11 ms
+  [RTT] → node3: 0.12 ms
+  [RTT] → node4: 0.13 ms
+[Agent] Wrote metrics | nic_sent=14.1MB/s nic_recv=14.1MB/s rtt=0.15050000001792796ms peer_rtt_rows=4
+[Agent] Training done; keeping RTT server alive for final peer probes...
+[Agent] Final RTT grace period complete. Shutting down.
+[Agent] Exiting.
+[Launch] Starting telemetry agent on node0...
+[Launch] Starting training on node0...
+[Launch] Training finished on node0.
+[Launch] Done.

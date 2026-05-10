@@ -20,7 +20,7 @@ services:
     environment:
       - MASTER_ADDR=node0
       - MASTER_PORT=29500
-      - WORLD_SIZE=3
+      - WORLD_SIZE=5
       - RANK=0
     tty: true
     stdin_open: true
@@ -42,7 +42,7 @@ services:
     environment:
       - MASTER_ADDR=node0
       - MASTER_PORT=29500
-      - WORLD_SIZE=3
+      - WORLD_SIZE=5
       - RANK=1
     tty: true
     stdin_open: true
@@ -64,8 +64,52 @@ services:
     environment:
       - MASTER_ADDR=node0
       - MASTER_PORT=29500
-      - WORLD_SIZE=3
+      - WORLD_SIZE=5
       - RANK=2
+    tty: true
+    stdin_open: true
+
+  node3:
+    build: .
+    container_name: node3
+    hostname: node3
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - training-net
+    volumes:
+      - ./training:/workspace/training
+      - ./results:/workspace/results
+      - ./data:/workspace/data
+      - ./tools:/workspace/tools
+      - ./telemetry:/workspace/telemetry
+    environment:
+      - MASTER_ADDR=node0
+      - MASTER_PORT=29500
+      - WORLD_SIZE=5
+      - RANK=3
+    tty: true
+    stdin_open: true
+
+  node4:
+    build: .
+    container_name: node4
+    hostname: node4
+    cap_add:
+      - NET_ADMIN
+    networks:
+      - training-net
+    volumes:
+      - ./training:/workspace/training
+      - ./results:/workspace/results
+      - ./data:/workspace/data
+      - ./tools:/workspace/tools
+      - ./telemetry:/workspace/telemetry
+    environment:
+      - MASTER_ADDR=node0
+      - MASTER_PORT=29500
+      - WORLD_SIZE=5
+      - RANK=4
     tty: true
     stdin_open: true
 

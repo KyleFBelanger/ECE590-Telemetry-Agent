@@ -1,0 +1,43 @@
+[Hook] Installed | job=five_node1_delay_20ms_001 rank=0 node=node0
+[Master] Cluster ready — 5 nodes connected | job_id=five_node1_delay_20ms_001 | epochs=3
+[Hook] Epoch 1 | node=node0 | all_reduce=200.2ms
+Epoch 1 | Loss: 1.9928 | Time: 39.46s
+[Hook] Epoch 2 | node=node0 | all_reduce=199.8ms
+Epoch 2 | Loss: 0.9012 | Time: 39.41s
+[Hook] Epoch 3 | node=node0 | all_reduce=198.7ms
+Epoch 3 | Loss: 0.5318 | Time: 39.20s
+[Hook] Written done signal → /workspace/data/sync/five_node1_delay_20ms_001_node0_done
+Training complete!
+[RTT server] Listening on port 19876
+[Agent] Started | node=node0 | job=five_node1_delay_20ms_001 | peers=['node1', 'node2', 'node3', 'node4']
+[Agent] Read epoch signal file: /workspace/data/sync/five_node1_delay_20ms_001_node0_epoch_1.json
+[Agent] Epoch 1 complete | all_reduce=200.2ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 41.96 ms
+  [RTT] → node2: 0.07 ms
+  [RTT] → node3: 0.06 ms
+  [RTT] → node4: 0.38 ms
+[Agent] Wrote metrics | nic_sent=3.3MB/s nic_recv=3.4MB/s rtt=41.95820899985847ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_node1_delay_20ms_001_node0_epoch_2.json
+[Agent] Epoch 2 complete | all_reduce=199.8ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 42.33 ms
+  [RTT] → node2: 0.27 ms
+  [RTT] → node3: 0.22 ms
+  [RTT] → node4: 0.23 ms
+[Agent] Wrote metrics | nic_sent=3.4MB/s nic_recv=3.4MB/s rtt=42.329124999923806ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_node1_delay_20ms_001_node0_epoch_3.json
+[Agent] Epoch 3 complete | all_reduce=198.7ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node1: 42.43 ms
+  [RTT] → node2: 0.15 ms
+  [RTT] → node3: 0.09 ms
+  [RTT] → node4: 0.16 ms
+[Agent] Wrote metrics | nic_sent=3.3MB/s nic_recv=3.3MB/s rtt=42.434292000052665ms peer_rtt_rows=4
+[Agent] Training done; keeping RTT server alive for final peer probes...
+[Agent] Final RTT grace period complete. Shutting down.
+[Agent] Exiting.
+[Launch] Starting telemetry agent on node0...
+[Launch] Starting training on node0...
+[Launch] Training finished on node0.
+[Launch] Done.

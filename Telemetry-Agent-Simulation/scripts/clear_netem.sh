@@ -2,18 +2,23 @@
 set -euo pipefail
 
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <node0|node1|node2>" >&2
+  echo "Usage: $0 <node0|node1|node2|node3|node4>" >&2
   exit 2
 fi
 
 node="$1"
-case "$node" in
-  node0|node1|node2) ;;
-  *)
-    echo "Argument must be node0, node1, or node2." >&2
-    exit 2
-    ;;
-esac
+read -r -a valid_nodes <<< "${NODES:-node0 node1 node2 node3 node4}"
+valid=0
+for valid_node in "${valid_nodes[@]}"; do
+  if [[ "$node" == "$valid_node" ]]; then
+    valid=1
+    break
+  fi
+done
+if [[ "$valid" -ne 1 ]]; then
+  echo "Argument must be one of: ${valid_nodes[*]}." >&2
+  exit 2
+fi
 
 docker exec -i "$node" sh -s <<'SH'
 set -eu

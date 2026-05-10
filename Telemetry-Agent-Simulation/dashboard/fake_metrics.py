@@ -8,7 +8,7 @@ script and his data will flow into the same tables.
 
 Usage:
   python3 fake_metrics.py                 # healthy cluster
-  python3 fake_metrics.py --slow node1    # simulate node1 as a straggler
+  python3 fake_metrics.py --slow node3    # simulate node3 as a straggler
 """
 import sqlite3
 import time
@@ -17,7 +17,7 @@ import argparse
 import uuid
 
 DB_PATH = '/workspace/data/metrics.db'
-NODES   = ['node0', 'node1', 'node2']
+NODES   = ['node0', 'node1', 'node2', 'node3', 'node4']
 
 # Realistic baseline values (what a healthy node looks like)
 BASELINE = {
@@ -57,7 +57,7 @@ def insert_metric(conn, m):
           m['all_reduce_ms'], m['rtt_ms'], m['epoch']))
 
 def simulate_job(slow_node=None, num_epochs=10, epoch_interval=2.0):
-    """Simulate one full training job — N epochs, all 3 nodes reporting per epoch"""
+    """Simulate one full training job — N epochs, all configured nodes reporting per epoch"""
     conn   = sqlite3.connect(DB_PATH)
     job_id = str(uuid.uuid4())[:8]
 
@@ -81,7 +81,7 @@ def simulate_job(slow_node=None, num_epochs=10, epoch_interval=2.0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--slow',     type=str, default=None,
-                        choices=['node0', 'node1', 'node2'],
+                        choices=NODES,
                         help='Simulate this node as a straggler')
     parser.add_argument('--epochs',   type=int, default=10)
     parser.add_argument('--interval', type=float, default=2.0,

@@ -6,7 +6,7 @@ It starts the agent as a background process, then runs training, then
 ensures the agent exits cleanly when training is done.
 
 Usage (inside a node container):
-  python3 telemetry/launch.py --node-id node0 --peers node1 node2
+  python3 telemetry/launch.py --node-id node0 --peers node1 node2 node3 node4
 
 Environment variables expected (set by docker-compose.yml):
   MASTER_ADDR, MASTER_PORT, WORLD_SIZE, RANK
@@ -27,7 +27,7 @@ def main():
     parser.add_argument('--node-id', required=True,
                         help='This node\'s name, e.g. node0')
     parser.add_argument('--peers',   nargs='*', default=[],
-                        help='Peer hostnames to probe, e.g. node1 node2')
+                        help='Peer hostnames to probe, e.g. node1 node2 node3 node4')
     parser.add_argument('--job-id',  default=None,
                         help='Optional job ID — auto-generated if not provided')
     args = parser.parse_args()

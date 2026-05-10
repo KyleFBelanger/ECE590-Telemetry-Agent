@@ -1,0 +1,37 @@
+[RTT server] Listening on port 19876
+[Agent] Started | node=node1 | job=five_baseline_001 | peers=['node0', 'node2', 'node3', 'node4']
+[Agent] Read epoch signal file: /workspace/data/sync/five_baseline_001_node1_epoch_1.json
+[Agent] Epoch 1 complete | all_reduce=41.7ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 0.29 ms
+  [RTT] → node2: 1.05 ms
+  [RTT] → node3: 0.11 ms
+  [RTT] → node4: 0.83 ms
+[Agent] Wrote metrics | nic_sent=14.1MB/s nic_recv=14.1MB/s rtt=1.045875000045271ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_baseline_001_node1_epoch_2.json
+[Agent] Epoch 2 complete | all_reduce=44.0ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 0.07 ms
+  [RTT] → node2: 0.15 ms
+  [RTT] → node3: 0.20 ms
+  [RTT] → node4: 0.12 ms
+[Agent] Wrote metrics | nic_sent=13.4MB/s nic_recv=13.4MB/s rtt=0.19666699995468662ms peer_rtt_rows=4
+[Agent] Read epoch signal file: /workspace/data/sync/five_baseline_001_node1_epoch_3.json
+[Agent] Epoch 3 complete | all_reduce=43.0ms
+[Agent] Running RTT probes (idle window)...
+  [RTT] → node0: 0.08 ms
+  [RTT] → node2: 0.07 ms
+  [RTT] → node3: unreachable
+  [RTT] → node4: 0.09 ms
+[Agent] Wrote metrics | nic_sent=13.7MB/s nic_recv=13.7MB/s rtt=0.0949999998738349ms peer_rtt_rows=4
+[Agent] Training complete signal received. Shutting down.
+[Agent] Exiting.
+[Hook] Installed | job=five_baseline_001 rank=1 node=node1
+[Hook] Epoch 1 | node=node1 | all_reduce=41.7ms
+[Hook] Epoch 2 | node=node1 | all_reduce=44.0ms
+[Hook] Epoch 3 | node=node1 | all_reduce=43.0ms
+[Hook] Written done signal → /workspace/data/sync/five_baseline_001_node1_done
+[Launch] Starting telemetry agent on node1...
+[Launch] Starting training on node1...
+[Launch] Training finished on node1.
+[Launch] Done.

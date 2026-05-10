@@ -6,10 +6,14 @@ health scores and recent per-peer RTT paths, then returns an explainable
 recommendation about which nodes look safer to prefer or avoid.
 """
 
+import json
+import sqlite3
+import sys
+
+DB_PATH = "/workspace/data/metrics.db"
 RECENT_JOB_LIMIT = 5
 RTT_HIGH_THRESHOLD_MS = 10.0
 RTT_SEVERE_THRESHOLD_MS = 25.0
-RTT_BAD_THRESHOLD_MS = RTT_HIGH_THRESHOLD_MS
 MIN_HEALTH_SCORE = 0.75
 TIMEOUT_RISK_WEIGHT = 0.15
 HIGH_RTT_RISK_WEIGHT = 0.10
@@ -25,18 +29,27 @@ EMPTY_RECOMMENDATION = {
     "avoid_nodes": [],
     "confidence": 0.0,
     "reason": "Not enough RTT data yet.",
-    "signals": {
-        "health_scores": {},
-        "rtt_path_scores": {},
-        "high_rtt_paths": [],
-        "per_node_risk": {},
-        "recent_jobs_considered": [],
-    },
+    "signals": {},
     "selected_job_id": None,
     "high_rtt_paths": [],
     "per_node_risk": {},
-    "mode": "none",
+    "not_evaluated_nodes": [],
+    "mode": "no_data",
 }
+
+
+def _empty_recommendation(reason="Not enough RTT data yet.", selected_job_id=None):
+    rec = dict(EMPTY_RECOMMENDATION)
+    rec["reason"] = reason
+    rec["selected_job_id"] = selected_job_id
+    return rec
+
+
+def get_conn(db_path=DB_PATH):
+    conn = sqlite3.connect(db_path, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
+    return conn
 
 
 def _table_exists(conn, table_name):
@@ -51,6 +64,9 @@ def _clamp(value, lo=0.0, hi=1.0):
 
 
 def _recent_jobs(conn):
+    if not _table_exists(conn, "metrics"):
+        return []
+
     return [
         row[0]
         for row in conn.execute(
@@ -79,8 +95,46 @@ def _health_scores(conn):
     return {row["node_id"]: float(row["current_score"]) for row in health_rows}
 
 
+def _known_nodes(conn):
+    nodes = set(_health_scores(conn))
+
+    if _table_exists(conn, "metrics"):
+        rows = conn.execute("SELECT DISTINCT node_id FROM metrics").fetchall()
+        nodes.update(row["node_id"] for row in rows)
+
+    if _table_exists(conn, "rtt_metrics"):
+        rows = conn.execute(
+            """
+            SELECT node_id FROM rtt_metrics
+            UNION
+            SELECT peer_node_id AS node_id FROM rtt_metrics
+            """
+        ).fetchall()
+        nodes.update(row["node_id"] for row in rows)
+
+    return nodes
+
+
+def _selected_job_participants(conn, selected_job_id, rtt_rows):
+    participants = set()
+    for row in rtt_rows:
+        participants.add(row["node_id"])
+        participants.add(row["peer_node_id"])
+
+    if _table_exists(conn, "metrics"):
+        rows = conn.execute(
+            "SELECT DISTINCT node_id FROM metrics WHERE job_id = ?",
+            (selected_job_id,),
+        ).fetchall()
+        participants.update(row["node_id"] for row in rows)
+
+    return participants
+
+
 def _load_rtt_rows(conn, job_ids):
     if not job_ids:
+        return []
+    if not _table_exists(conn, "rtt_metrics"):
         return []
 
     placeholders = ",".join("?" for _ in job_ids)
@@ -94,11 +148,14 @@ def _load_rtt_rows(conn, job_ids):
     ).fetchall()
 
 
-def _build_path_and_node_stats(rtt_rows, health_scores):
-    nodes = set(health_scores)
-    for row in rtt_rows:
-        nodes.add(row["node_id"])
-        nodes.add(row["peer_node_id"])
+def _build_path_and_node_stats(rtt_rows, health_scores, participating_nodes=None):
+    if participating_nodes is None:
+        nodes = set(health_scores)
+        for row in rtt_rows:
+            nodes.add(row["node_id"])
+            nodes.add(row["peer_node_id"])
+    else:
+        nodes = set(participating_nodes)
 
     node_stats = {
         node: {
@@ -116,6 +173,8 @@ def _build_path_and_node_stats(rtt_rows, health_scores):
     for row in rtt_rows:
         src = row["node_id"]
         peer = row["peer_node_id"]
+        if src not in nodes or peer not in nodes:
+            continue
         rtt = row["rtt_ms"]
         key = f"{src}->{peer}"
         path = path_scores.setdefault(key, {
@@ -227,8 +286,21 @@ def _finalize_node_risk(node_stats, selected_job_mode=False):
     return risks
 
 
-def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores):
-    nodes, path_scores, node_stats, high_rtt_paths = _build_path_and_node_stats(rtt_rows, health_scores)
+def _not_evaluated_note(not_evaluated_nodes):
+    if not not_evaluated_nodes:
+        return ""
+    if len(not_evaluated_nodes) == 1:
+        return f" {not_evaluated_nodes[0]} was not evaluated in this selected job."
+    return f" {', '.join(not_evaluated_nodes)} were not evaluated in this selected job."
+
+
+def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores, participating_nodes, known_nodes):
+    not_evaluated_nodes = sorted(known_nodes - participating_nodes)
+    nodes, path_scores, node_stats, high_rtt_paths = _build_path_and_node_stats(
+        rtt_rows,
+        health_scores,
+        participating_nodes=participating_nodes,
+    )
     risks = _finalize_node_risk(node_stats, selected_job_mode=True)
     ranked = sorted(risks.items(), key=lambda item: item[1], reverse=True)
 
@@ -237,7 +309,11 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores):
 
     if not high_rtt_paths:
         recommended_nodes = [node for node, _ in sorted(risks.items(), key=lambda item: item[1])]
-        reason = f"Selected job {selected_job_id} has no RTT paths above {RTT_HIGH_THRESHOLD_MS:.0f} ms."
+        reason = (
+            f"No degraded node detected among participating nodes for selected job {selected_job_id}; "
+            f"no RTT paths are above {RTT_HIGH_THRESHOLD_MS:.0f} ms."
+            f"{_not_evaluated_note(not_evaluated_nodes)}"
+        )
         return _recommendation_payload(
             recommended_nodes=recommended_nodes,
             avoid_nodes=[],
@@ -250,6 +326,7 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores):
             recent_jobs=[selected_job_id],
             selected_job_id=selected_job_id,
             mode="selected_job",
+            not_evaluated_nodes=not_evaluated_nodes,
         )
 
     highest_node, highest_risk = ranked[0]
@@ -286,6 +363,7 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores):
             f"{top_stats['high_rtt_path_count']} high-latency RTT paths"
             f"{f' including {severe_count} severe paths' if severe_count else ''}. "
             "The RTT paths between the remaining nodes look healthy, so this is the clearest node to avoid."
+            f"{_not_evaluated_note(not_evaluated_nodes)}"
         )
     else:
         avoid_nodes = []
@@ -295,6 +373,7 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores):
         reason = (
             f"Selected job {selected_job_id}: high RTT exists, but it is not concentrated on one node "
             "strongly enough to recommend avoiding a specific node."
+            f"{_not_evaluated_note(not_evaluated_nodes)}"
         )
 
     return _recommendation_payload(
@@ -309,6 +388,7 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores):
         recent_jobs=[selected_job_id],
         selected_job_id=selected_job_id,
         mode="selected_job",
+        not_evaluated_nodes=not_evaluated_nodes,
     )
 
 
@@ -324,8 +404,10 @@ def _recommendation_payload(
     recent_jobs,
     selected_job_id=None,
     mode="historical",
+    not_evaluated_nodes=None,
 ):
     per_node_risk = dict(sorted(node_stats.items()))
+    not_evaluated_nodes = sorted(not_evaluated_nodes or [])
     return {
         "recommended_nodes": recommended_nodes,
         "avoid_nodes": avoid_nodes,
@@ -334,13 +416,15 @@ def _recommendation_payload(
         "selected_job_id": selected_job_id,
         "high_rtt_paths": high_rtt_paths,
         "per_node_risk": per_node_risk,
+        "not_evaluated_nodes": not_evaluated_nodes,
         "mode": mode,
         "signals": {
             "health_scores": {node: round(score, 3) for node, score in health_scores.items()},
-            "rtt_path_scores": path_scores,
             "high_rtt_paths": high_rtt_paths,
-            "node_risk": per_node_risk,
             "per_node_risk": per_node_risk,
+            "node_risk": per_node_risk,
+            "not_evaluated_nodes": not_evaluated_nodes,
+            "rtt_path_scores": path_scores,
             "recent_jobs_considered": recent_jobs,
             "selected_job_id": selected_job_id,
             "mode": mode,
@@ -353,61 +437,102 @@ def _recommendation_payload(
     }
 
 
-def compute_recommendation(conn, selected_job_id=None):
-    if not _table_exists(conn, "rtt_metrics"):
-        return EMPTY_RECOMMENDATION.copy()
+def compute_recommendation(db_path=DB_PATH, selected_job_id=None):
+    """
+    Return an advisory node recommendation.
 
-    health_scores = _health_scores(conn)
-
-    if selected_job_id:
-        selected_rows = _load_rtt_rows(conn, [selected_job_id])
-        if selected_rows:
-            return _selected_job_recommendation(selected_job_id, selected_rows, health_scores)
-
-    recent_jobs = _recent_jobs(conn)
-    if not recent_jobs:
-        return EMPTY_RECOMMENDATION.copy()
-
-    rtt_rows = _load_rtt_rows(conn, recent_jobs)
-    if not rtt_rows:
-        return EMPTY_RECOMMENDATION.copy()
-
-    nodes, path_scores, node_stats, high_rtt_paths = _build_path_and_node_stats(rtt_rows, health_scores)
-    risks = _finalize_node_risk(node_stats, selected_job_mode=False)
-
-    ranked = sorted(risks.items(), key=lambda item: item[1], reverse=True)
-    if not ranked:
-        return EMPTY_RECOMMENDATION.copy()
-
-    highest_node, highest_risk = ranked[0]
-    second_risk = ranked[1][1] if len(ranked) > 1 else 0.0
-    separation = highest_risk - second_risk
-    confidence = _clamp(separation / max(RISK_SEPARATION_THRESHOLD, 0.01))
-
-    if highest_risk < RISK_SEPARATION_THRESHOLD or separation < RISK_SEPARATION_THRESHOLD:
-        avoid_nodes = []
-        recommended_nodes = [node for node, _ in sorted(risks.items(), key=lambda item: item[1])]
-        reason = "No clearly degraded node detected from recent health and RTT path data."
-        confidence = round(confidence, 2)
+    `db_path` may be a SQLite path or an existing sqlite3 connection. The
+    connection form keeps dashboard/app.py efficient; the path form makes this
+    module easy to call from scripts.
+    """
+    close_conn = False
+    if hasattr(db_path, "execute"):
+        conn = db_path
     else:
-        avoid_nodes = [highest_node]
-        recommended_nodes = [node for node, _ in sorted(risks.items(), key=lambda item: item[1]) if node not in avoid_nodes]
-        confidence = round(confidence, 2)
-        reason = (
-            f"Historical view: {highest_node} has the highest recent risk from health score and per-peer RTT paths. "
-            "Treat this as advisory, not an automatic scheduling decision."
-        )
+        conn = get_conn(db_path)
+        close_conn = True
 
-    return _recommendation_payload(
-        recommended_nodes=recommended_nodes,
-        avoid_nodes=avoid_nodes,
-        confidence=confidence,
-        reason=reason,
-        health_scores=health_scores,
-        path_scores=path_scores,
-        node_stats=node_stats,
-        high_rtt_paths=high_rtt_paths,
-        recent_jobs=recent_jobs,
-        selected_job_id=selected_job_id,
-        mode="historical",
-    )
+    try:
+        if not _table_exists(conn, "rtt_metrics"):
+            return _empty_recommendation("Not enough RTT data yet.", selected_job_id)
+
+        health_scores = _health_scores(conn)
+
+        if selected_job_id:
+            selected_rows = _load_rtt_rows(conn, [selected_job_id])
+            if selected_rows:
+                participating_nodes = _selected_job_participants(conn, selected_job_id, selected_rows)
+                known_nodes = _known_nodes(conn)
+                return _selected_job_recommendation(
+                    selected_job_id,
+                    selected_rows,
+                    health_scores,
+                    participating_nodes,
+                    known_nodes,
+                )
+
+        recent_jobs = _recent_jobs(conn)
+        if not recent_jobs:
+            return _empty_recommendation("Not enough RTT data yet.", selected_job_id)
+
+        rtt_rows = _load_rtt_rows(conn, recent_jobs)
+        if not rtt_rows:
+            return _empty_recommendation("Not enough RTT data yet.", selected_job_id)
+
+        nodes, path_scores, node_stats, high_rtt_paths = _build_path_and_node_stats(rtt_rows, health_scores)
+        risks = _finalize_node_risk(node_stats, selected_job_mode=False)
+
+        ranked = sorted(risks.items(), key=lambda item: item[1], reverse=True)
+        if not ranked:
+            return _empty_recommendation("Not enough RTT data yet.", selected_job_id)
+
+        highest_node, highest_risk = ranked[0]
+        second_risk = ranked[1][1] if len(ranked) > 1 else 0.0
+        separation = highest_risk - second_risk
+        confidence = _clamp(separation / max(RISK_SEPARATION_THRESHOLD, 0.01))
+
+        if highest_risk < RISK_SEPARATION_THRESHOLD or separation < RISK_SEPARATION_THRESHOLD:
+            avoid_nodes = []
+            recommended_nodes = [node for node, _ in sorted(risks.items(), key=lambda item: item[1])]
+            reason = "No clearly degraded node detected from recent health and RTT path data."
+            confidence = round(confidence, 2)
+        else:
+            avoid_nodes = [highest_node]
+            recommended_nodes = [
+                node
+                for node, _ in sorted(risks.items(), key=lambda item: item[1])
+                if node not in avoid_nodes
+            ]
+            confidence = round(confidence, 2)
+            reason = (
+                f"Recent-history view: {highest_node} has the highest recent risk from "
+                "health score and per-peer RTT paths. Treat this as advisory, not an "
+                "automatic scheduling decision."
+            )
+
+        return _recommendation_payload(
+            recommended_nodes=recommended_nodes,
+            avoid_nodes=avoid_nodes,
+            confidence=confidence,
+            reason=reason,
+            health_scores=health_scores,
+            path_scores=path_scores,
+            node_stats=node_stats,
+            high_rtt_paths=high_rtt_paths,
+            recent_jobs=recent_jobs,
+            selected_job_id=selected_job_id,
+            mode="recent_history",
+        )
+    finally:
+        if close_conn:
+            conn.close()
+
+
+def main(argv=None):
+    argv = argv if argv is not None else sys.argv[1:]
+    selected_job_id = argv[0] if argv else None
+    print(json.dumps(compute_recommendation(selected_job_id=selected_job_id), indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

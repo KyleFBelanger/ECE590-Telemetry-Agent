@@ -9,6 +9,12 @@ fi
 job_id="$1"
 mkdir -p results
 
+read -r -a job_nodes <<< "${NODES:-node0 node1 node2 node3 node4}"
+world_size="${#job_nodes[@]}"
+if [[ "$world_size" -lt 1 ]]; then
+  echo "NODES must contain at least one node." >&2
+  exit 2
+fi
 pids=()
 nodes=()
 statuses=()
@@ -40,16 +46,20 @@ trap on_interrupt INT TERM
 
 run_node() {
   local node="$1"
+  local rank="$2"
+  local world_size="$3"
+  shift
+  shift
   shift
   local log_path="results/${job_id}_${node}.log"
+  local exec_args=(-e WORLD_SIZE="$world_size" -e RANK="$rank")
 
   if [[ -n "${EPOCHS:-}" ]]; then
-    docker exec -e EPOCHS="$EPOCHS" "$node" python3 telemetry/launch.py \
-      --node-id "$node" --peers "$@" --job-id "$job_id" >"$log_path" 2>&1
-  else
-    docker exec "$node" python3 telemetry/launch.py \
-      --node-id "$node" --peers "$@" --job-id "$job_id" >"$log_path" 2>&1
+    exec_args+=(-e EPOCHS="$EPOCHS")
   fi
+
+  docker exec "${exec_args[@]}" "$node" python3 telemetry/launch.py \
+      --node-id "$node" --peers "$@" --job-id "$job_id" >"$log_path" 2>&1
 }
 
 echo "Cleaning stale processes before starting ${job_id}..."
@@ -57,25 +67,26 @@ echo "Cleaning stale processes before starting ${job_id}..."
 
 docker exec node0 sh -lc 'mkdir -p /workspace/data/sync && rm -f /workspace/data/sync/*'
 
-echo "Starting job ${job_id} across node0, node1, and node2..."
+echo "Starting job ${job_id} across ${world_size} nodes: ${job_nodes[*]}"
 if [[ -n "${EPOCHS:-}" ]]; then
   echo "Using EPOCHS=${EPOCHS}"
 fi
 
-run_node node0 node1 node2 &
-pids+=("$!")
-nodes+=("node0")
-statuses+=("-1")
+for i in "${!job_nodes[@]}"; do
+  node="${job_nodes[$i]}"
+  peers=()
+  for peer in "${job_nodes[@]}"; do
+    if [[ "$peer" != "$node" ]]; then
+      peers+=("$peer")
+    fi
+  done
 
-run_node node1 node0 node2 &
-pids+=("$!")
-nodes+=("node1")
-statuses+=("-1")
-
-run_node node2 node0 node1 &
-pids+=("$!")
-nodes+=("node2")
-statuses+=("-1")
+  echo "${node} peers: ${peers[*]}"
+  run_node "$node" "$i" "$world_size" "${peers[@]}" &
+  pids+=("$!")
+  nodes+=("$node")
+  statuses+=("-1")
+done
 
 remaining=${#pids[@]}
 status=0
@@ -109,9 +120,9 @@ done
 trap - INT TERM
 
 echo "Logs written to:"
-echo "  results/${job_id}_node0.log"
-echo "  results/${job_id}_node1.log"
-echo "  results/${job_id}_node2.log"
+for node in "${job_nodes[@]}"; do
+  echo "  results/${job_id}_${node}.log"
+done
 echo "Dashboard: http://127.0.0.1:5050"
 
 if [[ "$status" -ne 0 ]]; then

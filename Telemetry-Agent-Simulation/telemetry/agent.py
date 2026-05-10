@@ -16,7 +16,7 @@ Design decisions that match the paper's architecture:
     and RTT uses plain TCP sockets.
 
 Usage (inside the telemetry container):
-  python3 telemetry/agent.py --node-id node0 --job-id <job_id> --peers node1 node2
+  python3 telemetry/agent.py --node-id node0 --job-id <job_id> --peers node1 node2 node3 node4
 """
 
 import argparse
@@ -39,6 +39,7 @@ NIC_INTERVAL   = 2.0    # seconds between NIC counter samples during training
 RTT_PORT       = 19876  # port the RTT probe server listens on
 RTT_TIMEOUT    = 2.0    # seconds before an RTT probe times out
 RTT_PROBES     = 5      # number of pings per peer per measurement round
+FINAL_RTT_SERVER_GRACE_SEC = 5.0  # keep echo server up for peers' final probes
 PROBE_PAYLOAD  = b'PING'
 
 
@@ -345,6 +346,7 @@ def run_agent(node_id, job_id, peers):
     print(f"[Agent] Started | node={node_id} | job={job_id} | peers={peers}")
 
     expected_epoch = 1
+    final_grace_needed = False
 
     while True:
         # Wait for training to signal epoch complete
@@ -391,8 +393,13 @@ def run_agent(node_id, job_id, peers):
 
         # Check if training is done
         if read_final_signal(job_id, node_id):
-            print(f"[Agent] Training complete signal received. Shutting down.")
+            final_grace_needed = True
+            print("[Agent] Training done; keeping RTT server alive for final peer probes...")
             break
+
+    if final_grace_needed:
+        time.sleep(FINAL_RTT_SERVER_GRACE_SEC)
+        print("[Agent] Final RTT grace period complete. Shutting down.")
 
     stop_event.set()
     print("[Agent] Exiting.")
@@ -407,7 +414,7 @@ if __name__ == '__main__':
     parser.add_argument('--job-id',  required=True,
                         help='Job identifier shared across all nodes for this run')
     parser.add_argument('--peers',   nargs='*', default=[],
-                        help='Hostnames of peer nodes to probe, e.g. node1 node2')
+                        help='Hostnames of peer nodes to probe, e.g. node1 node2 node3 node4')
     args = parser.parse_args()
 
     run_agent(args.node_id, args.job_id, args.peers)
