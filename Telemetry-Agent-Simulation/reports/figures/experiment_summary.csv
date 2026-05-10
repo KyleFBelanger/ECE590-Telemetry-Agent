@@ -1,0 +1,4 @@
+job_id,friendly_label,node_count,epochs_per_node,avg_all_reduce_ms,avg_rtt_ms,avg_total_nic_MBps,metrics_rows,rtt_rows,timeout_count
+big5_baseline_001,5-node baseline,5,10.0,46.9141,0.3059,25.3041,50,200,0
+big5_node1_delay20_001,5-node node1 delay (100ms),5,10.0,841.6627,205.3069,1.6412,50,200,0
+big4_recommended_without_node1_after100ms_001,Recommended 4-node subset,4,10.0,34.7735,0.2956,31.7416,40,120,0

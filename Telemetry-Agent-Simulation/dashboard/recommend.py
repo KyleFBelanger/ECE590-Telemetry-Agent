@@ -34,6 +34,7 @@ EMPTY_RECOMMENDATION = {
     "high_rtt_paths": [],
     "per_node_risk": {},
     "not_evaluated_nodes": [],
+    "scheduler_choice": None,
     "mode": "no_data",
 }
 
@@ -286,6 +287,110 @@ def _finalize_node_risk(node_stats, selected_job_mode=False):
     return risks
 
 
+def _scheduler_sort_key(item):
+    node, stats = item
+    health = stats.get("health_score")
+    avg_rtt = stats.get("avg_rtt_ms")
+    return (
+        stats.get("risk_score", 0.0),
+        -(health if health is not None else -1.0),
+        avg_rtt if avg_rtt is not None else float("inf"),
+        stats.get("high_rtt_path_count", 0),
+        node,
+    )
+
+
+def _build_scheduler_choice(node_stats, target_node_count, not_evaluated_nodes=None):
+    if target_node_count is None:
+        return None
+
+    try:
+        target_node_count = int(target_node_count)
+    except (TypeError, ValueError):
+        return {
+            "target_node_count": target_node_count,
+            "selected_nodes": [],
+            "excluded_nodes": [],
+            "reason": "Invalid target node count.",
+            "selection_mode": "top_k_by_lowest_risk",
+        }
+
+    if target_node_count <= 0:
+        return {
+            "target_node_count": target_node_count,
+            "selected_nodes": [],
+            "excluded_nodes": sorted(node_stats),
+            "reason": "Target node count must be greater than zero.",
+            "selection_mode": "top_k_by_lowest_risk",
+        }
+
+    ranked = sorted(node_stats.items(), key=_scheduler_sort_key)
+    ranked_nodes = [node for node, _ in ranked]
+    selected_nodes = ranked_nodes[:target_node_count]
+    excluded_nodes = ranked_nodes[target_node_count:]
+
+    if len(ranked_nodes) < target_node_count:
+        warning = (
+            f"Only {len(ranked_nodes)} participating nodes are available for a "
+            f"{target_node_count}-node request; selecting all participating nodes."
+        )
+    else:
+        warning = None
+
+    high_nodes = [
+        node
+        for node, stats in ranked
+        if stats.get("high_rtt_path_count", 0) > 0
+        or stats.get("severe_rtt_path_count", 0) > 0
+        or stats.get("timeout_count", 0) > 0
+        or (stats.get("health_score") is not None and stats["health_score"] < MIN_HEALTH_SCORE)
+    ]
+
+    if warning:
+        reason = warning
+    elif len(ranked_nodes) == target_node_count:
+        reason = f"Selected all {target_node_count} participating nodes; no node needed to be excluded."
+    elif not high_nodes:
+        reason = (
+            f"All evaluated nodes look healthy; excluded {', '.join(excluded_nodes) or 'none'} "
+            f"only because the requested job size is {target_node_count}."
+        )
+    elif len(excluded_nodes) == 1 and excluded_nodes[0] in high_nodes:
+        excluded_risk = node_stats[excluded_nodes[0]].get("risk_score", 0.0)
+        selected_max_risk = max((node_stats[node].get("risk_score", 0.0) for node in selected_nodes), default=0.0)
+        if excluded_risk - selected_max_risk >= SELECTED_JOB_RISK_SEPARATION:
+            reason = (
+                f"Selected the {target_node_count} lowest-risk participating nodes and excluded "
+                f"{excluded_nodes[0]}, the highest-risk node."
+            )
+        else:
+            reason = (
+                f"Multiple nodes show degradation signals ({', '.join(high_nodes)}); selected the "
+                f"best {target_node_count} available nodes by lowest risk."
+            )
+    elif len(high_nodes) == 1:
+        reason = (
+            f"Selected the {target_node_count} lowest-risk participating nodes and excluded "
+            f"{', '.join(excluded_nodes) or 'none'}; {high_nodes[0]} is the clearest degraded node."
+        )
+    else:
+        reason = (
+            f"Multiple nodes show degradation signals ({', '.join(high_nodes)}); selected the "
+            f"best {target_node_count} available nodes by lowest risk."
+        )
+
+    if not_evaluated_nodes:
+        reason += f" Not evaluated in this selected job: {', '.join(not_evaluated_nodes)}."
+
+    return {
+        "target_node_count": target_node_count,
+        "selected_nodes": selected_nodes,
+        "excluded_nodes": excluded_nodes,
+        "reason": reason,
+        "selection_mode": "top_k_by_lowest_risk",
+    }
+
+
 def _not_evaluated_note(not_evaluated_nodes):
     if not not_evaluated_nodes:
         return ""
@@ -294,7 +399,14 @@ def _not_evaluated_note(not_evaluated_nodes):
     return f" {', '.join(not_evaluated_nodes)} were not evaluated in this selected job."
 
 
-def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores, participating_nodes, known_nodes):
+def _selected_job_recommendation(
+    selected_job_id,
+    rtt_rows,
+    health_scores,
+    participating_nodes,
+    known_nodes,
+    target_node_count=None,
+):
     not_evaluated_nodes = sorted(known_nodes - participating_nodes)
     nodes, path_scores, node_stats, high_rtt_paths = _build_path_and_node_stats(
         rtt_rows,
@@ -327,6 +439,7 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores, parti
             selected_job_id=selected_job_id,
             mode="selected_job",
             not_evaluated_nodes=not_evaluated_nodes,
+            target_node_count=target_node_count,
         )
 
     highest_node, highest_risk = ranked[0]
@@ -389,6 +502,7 @@ def _selected_job_recommendation(selected_job_id, rtt_rows, health_scores, parti
         selected_job_id=selected_job_id,
         mode="selected_job",
         not_evaluated_nodes=not_evaluated_nodes,
+        target_node_count=target_node_count,
     )
 
 
@@ -405,9 +519,11 @@ def _recommendation_payload(
     selected_job_id=None,
     mode="historical",
     not_evaluated_nodes=None,
+    target_node_count=None,
 ):
     per_node_risk = dict(sorted(node_stats.items()))
     not_evaluated_nodes = sorted(not_evaluated_nodes or [])
+    scheduler_choice = _build_scheduler_choice(per_node_risk, target_node_count, not_evaluated_nodes)
     return {
         "recommended_nodes": recommended_nodes,
         "avoid_nodes": avoid_nodes,
@@ -417,6 +533,7 @@ def _recommendation_payload(
         "high_rtt_paths": high_rtt_paths,
         "per_node_risk": per_node_risk,
         "not_evaluated_nodes": not_evaluated_nodes,
+        "scheduler_choice": scheduler_choice,
         "mode": mode,
         "signals": {
             "health_scores": {node: round(score, 3) for node, score in health_scores.items()},
@@ -424,6 +541,7 @@ def _recommendation_payload(
             "per_node_risk": per_node_risk,
             "node_risk": per_node_risk,
             "not_evaluated_nodes": not_evaluated_nodes,
+            "scheduler_choice": scheduler_choice,
             "rtt_path_scores": path_scores,
             "recent_jobs_considered": recent_jobs,
             "selected_job_id": selected_job_id,
@@ -437,7 +555,7 @@ def _recommendation_payload(
     }
 
 
-def compute_recommendation(db_path=DB_PATH, selected_job_id=None):
+def compute_recommendation(db_path=DB_PATH, selected_job_id=None, target_node_count=None):
     """
     Return an advisory node recommendation.
 
@@ -469,6 +587,7 @@ def compute_recommendation(db_path=DB_PATH, selected_job_id=None):
                     health_scores,
                     participating_nodes,
                     known_nodes,
+                    target_node_count=target_node_count,
                 )
 
         recent_jobs = _recent_jobs(conn)
@@ -522,6 +641,7 @@ def compute_recommendation(db_path=DB_PATH, selected_job_id=None):
             recent_jobs=recent_jobs,
             selected_job_id=selected_job_id,
             mode="recent_history",
+            target_node_count=target_node_count,
         )
     finally:
         if close_conn:
@@ -531,7 +651,17 @@ def compute_recommendation(db_path=DB_PATH, selected_job_id=None):
 def main(argv=None):
     argv = argv if argv is not None else sys.argv[1:]
     selected_job_id = argv[0] if argv else None
-    print(json.dumps(compute_recommendation(selected_job_id=selected_job_id), indent=2, sort_keys=True))
+    target_node_count = argv[1] if len(argv) > 1 else None
+    print(
+        json.dumps(
+            compute_recommendation(
+                selected_job_id=selected_job_id,
+                target_node_count=target_node_count,
+            ),
+            indent=2,
+            sort_keys=True,
+        )
+    )
 
 
 if __name__ == "__main__":

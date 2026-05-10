@@ -198,7 +198,7 @@ def build_current_job_status(latest_by_node, baseline_all_reduce_ms=None):
     }
 
 
-def load_dashboard_data(selected_job=None):
+def load_dashboard_data(selected_job=None, target_node_count=None):
     if not os.path.exists(DB_PATH):
         return empty_dashboard_payload(
             "Database file not found.",
@@ -386,7 +386,11 @@ def load_dashboard_data(selected_job=None):
             }
 
         try:
-            recommendation = compute_recommendation(conn, selected_job_id=selected_job)
+            recommendation = compute_recommendation(
+                conn,
+                selected_job_id=selected_job,
+                target_node_count=target_node_count,
+            )
         except Exception as exc:
             recommendation = {
                 "recommended_nodes": [],
@@ -836,6 +840,7 @@ TEMPLATE = """
       const recommended = rec.recommended_nodes || [];
       const avoid = rec.avoid_nodes || [];
       const notEvaluated = rec.not_evaluated_nodes || rec.signals?.not_evaluated_nodes || [];
+      const schedulerChoice = rec.scheduler_choice || rec.signals?.scheduler_choice;
       const nodeRisk = rec.signals?.node_risk || {};
       const modeLabel = rec.mode === "selected_job"
         ? `Selected-job RTT recommendation${rec.selected_job_id ? ` for ${rec.selected_job_id}` : ""}`
@@ -881,6 +886,34 @@ TEMPLATE = """
           <div class="callout" style="margin-bottom: 14px;">
             <strong>Not evaluated in selected job:</strong>
             ${notEvaluated.map((node) => pill("neutral", node)).join(" ")}
+          </div>
+        ` : ""}
+        ${schedulerChoice ? `
+          <div class="section" style="margin-bottom: 14px; box-shadow: none;">
+            <div class="section-title">
+              <div>
+                <h2>Best ${escapeHtml(schedulerChoice.target_node_count)}-node scheduler choice</h2>
+                <div class="section-subtitle">Top-K advisory selection by lowest node risk. This does not launch jobs automatically.</div>
+              </div>
+            </div>
+            <div class="grid recommendation-grid">
+              <div class="card">
+                <div class="label">Selected nodes</div>
+                <div class="mini-list">
+                  ${(schedulerChoice.selected_nodes || []).length ? schedulerChoice.selected_nodes.map((node) => pill("good", node)).join("") : pill("neutral", "none")}
+                </div>
+              </div>
+              <div class="card">
+                <div class="label">Excluded nodes</div>
+                <div class="mini-list">
+                  ${(schedulerChoice.excluded_nodes || []).length ? schedulerChoice.excluded_nodes.map((node) => pill("warn", node)).join("") : pill("neutral", "none")}
+                </div>
+              </div>
+              <div class="card">
+                <div class="label">Top-K reason</div>
+                <div class="hint" style="color: var(--text); line-height: 1.45;">${escapeHtml(schedulerChoice.reason || "")}</div>
+              </div>
+            </div>
           </div>
         ` : ""}
         ${riskRows ? `
@@ -1095,7 +1128,16 @@ def index():
 @app.route("/api/dashboard")
 def api_dashboard():
     selected_job = request.args.get("job")
-    return jsonify(load_dashboard_data(selected_job))
+    target_nodes = request.args.get("target_nodes")
+    target_node_count = None
+    if target_nodes:
+        try:
+            target_node_count = int(target_nodes)
+        except ValueError:
+            target_node_count = None
+    elif not target_nodes:
+        target_node_count = 4
+    return jsonify(load_dashboard_data(selected_job, target_node_count))
 
 
 if __name__ == "__main__":

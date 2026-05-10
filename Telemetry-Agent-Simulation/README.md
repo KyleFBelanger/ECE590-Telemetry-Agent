@@ -470,6 +470,36 @@ override:
 ./scripts/run_recommended_job.sh recommended_without_node1_001 five_node1_delay_20ms_001
 ```
 
+## Generating Report Figures
+
+Generate static PNG figures and CSV summaries for the final report:
+
+```bash
+python3 scripts/generate_report_figures.py --db data/metrics.db
+```
+
+Or, after rebuilding the Docker image with matplotlib support:
+
+```bash
+docker exec -it dashboard python3 scripts/generate_report_figures.py --db /workspace/data/metrics.db
+```
+
+Outputs are written to:
+
+```text
+reports/figures/
+```
+
+Main outputs:
+- average all-reduce time by experiment
+- average RTT by experiment
+- average total NIC throughput by experiment
+- per-node all-reduce comparison
+- RTT matrix heatmaps for baseline, node1 delay stress test, and recommended subset
+- recovery improvement summary
+- `experiment_summary.csv`
+- `rtt_pair_summary.csv`
+
 Suggested RTT/recommendation workflow:
 
 ```bash

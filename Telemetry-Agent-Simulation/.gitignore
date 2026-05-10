@@ -1,0 +1,25 @@
+
+# Local experiment database
+data/metrics.db
+data/metrics.db-wal
+data/metrics.db-shm
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
+# Runtime logs
+results/*.log
+results/archive_old_logs/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# macOS
+.DS_Store
+
+# Temporary sync/runtime files
+data/sync/*
+data/bad_db_backups/

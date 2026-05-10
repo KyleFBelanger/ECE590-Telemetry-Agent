@@ -1,20 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $# -gt 1 ]]; then
-  echo "Usage: $0 [job_id]" >&2
+if [[ $# -gt 2 ]]; then
+  echo "Usage: $0 [job_id] [target_node_count]" >&2
   exit 2
 fi
 
 job_id="${1:-}"
+target_node_count="${2:-}"
 
 if [[ -n "$job_id" ]]; then
-  docker exec -i -e JOB_ID="$job_id" dashboard python3 - <<'PY'
+  docker exec -i -e JOB_ID="$job_id" -e TARGET_NODE_COUNT="$target_node_count" dashboard python3 - <<'PY'
 import os
 from dashboard.recommend import compute_recommendation
 
 job_id = os.environ["JOB_ID"]
-rec = compute_recommendation(selected_job_id=job_id)
+target = os.environ.get("TARGET_NODE_COUNT") or None
+rec = compute_recommendation(selected_job_id=job_id, target_node_count=target)
 
 def join_nodes(nodes):
     return ", ".join(nodes) if nodes else "none"
@@ -26,6 +28,15 @@ print(f"Avoid nodes: {join_nodes(rec.get('avoid_nodes', []))}")
 print(f"Not evaluated nodes: {join_nodes(rec.get('not_evaluated_nodes', []))}")
 print(f"Confidence: {float(rec.get('confidence', 0.0)):.2f}")
 print(f"Reason: {rec.get('reason', 'Not enough RTT data yet.')}")
+
+choice = rec.get("scheduler_choice")
+if choice:
+    print()
+    print(f"Scheduler choice ({choice.get('selection_mode', 'top_k_by_lowest_risk')}):")
+    print(f"  Target node count: {choice.get('target_node_count')}")
+    print(f"  Selected nodes: {join_nodes(choice.get('selected_nodes', []))}")
+    print(f"  Excluded nodes: {join_nodes(choice.get('excluded_nodes', []))}")
+    print(f"  Reason: {choice.get('reason', '')}")
 
 per_node = rec.get("signals", {}).get("per_node_risk", {}) or rec.get("per_node_risk", {})
 if per_node:
@@ -47,10 +58,12 @@ if per_node:
         )
 PY
 else
-  docker exec -i dashboard python3 - <<'PY'
+  docker exec -i -e TARGET_NODE_COUNT="$target_node_count" dashboard python3 - <<'PY'
+import os
 from dashboard.recommend import compute_recommendation
 
-rec = compute_recommendation()
+target = os.environ.get("TARGET_NODE_COUNT") or None
+rec = compute_recommendation(target_node_count=target)
 
 def join_nodes(nodes):
     return ", ".join(nodes) if nodes else "none"
@@ -62,6 +75,15 @@ print(f"Avoid nodes: {join_nodes(rec.get('avoid_nodes', []))}")
 print(f"Not evaluated nodes: {join_nodes(rec.get('not_evaluated_nodes', []))}")
 print(f"Confidence: {float(rec.get('confidence', 0.0)):.2f}")
 print(f"Reason: {rec.get('reason', 'Not enough RTT data yet.')}")
+
+choice = rec.get("scheduler_choice")
+if choice:
+    print()
+    print(f"Scheduler choice ({choice.get('selection_mode', 'top_k_by_lowest_risk')}):")
+    print(f"  Target node count: {choice.get('target_node_count')}")
+    print(f"  Selected nodes: {join_nodes(choice.get('selected_nodes', []))}")
+    print(f"  Excluded nodes: {join_nodes(choice.get('excluded_nodes', []))}")
+    print(f"  Reason: {choice.get('reason', '')}")
 
 per_node = rec.get("signals", {}).get("per_node_risk", {}) or rec.get("per_node_risk", {})
 if per_node:
